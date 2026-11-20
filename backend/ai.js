@@ -1,12 +1,15 @@
-// Capa de IA. Por defecto llama a la API de OpenAI (platform.openai.com).
-// Para usar Azure OpenAI en su lugar: pon AI_PROVIDER=azure en .env y completa
-// AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_API_KEY / AZURE_OPENAI_DEPLOYMENT.
+// Capa de IA. Por defecto usa Groq (https://console.groq.com), que tiene una
+// capa gratuita real (sin tarjeta de crédito, sin cobro). También soporta
+// OpenAI y Azure OpenAI si en algún momento se prefiere cambiar:
+//   AI_PROVIDER=groq   (por defecto) -> usa GROQ_API_KEY
+//   AI_PROVIDER=openai                -> usa OPENAI_API_KEY (de pago)
+//   AI_PROVIDER=azure                 -> usa AZURE_OPENAI_*  (de pago)
 // El resto del backend (server.js) no necesita cambiar: siempre llama a
 // generarTexto() / generarJSON() de este archivo.
 
 const OpenAI = require("openai");
 
-const PROVIDER = (process.env.AI_PROVIDER || "openai").toLowerCase();
+const PROVIDER = (process.env.AI_PROVIDER || "groq").toLowerCase();
 
 let client;
 let modelo;
@@ -24,13 +27,21 @@ if (PROVIDER === "azure") {
     defaultQuery: { "api-version": "2024-06-01" },
     defaultHeaders: { "api-key": apiKey },
   });
-} else {
+} else if (PROVIDER === "openai") {
   const apiKey = process.env.OPENAI_API_KEY;
   modelo = process.env.OPENAI_MODEL || "gpt-4o-mini";
   if (!apiKey) {
     console.error("Falta OPENAI_API_KEY en .env");
   }
   client = new OpenAI({ apiKey });
+} else {
+  // Groq: API gratuita, compatible con el SDK de OpenAI (mismo formato).
+  const apiKey = process.env.GROQ_API_KEY;
+  modelo = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+  if (!apiKey) {
+    console.error("Falta GROQ_API_KEY en .env (consíguela gratis en https://console.groq.com/keys)");
+  }
+  client = new OpenAI({ apiKey, baseURL: "https://api.groq.com/openai/v1" });
 }
 
 async function generarTexto(mensajes, opts = {}) {

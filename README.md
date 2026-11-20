@@ -5,9 +5,10 @@ prospecto generado por IA (usando reconocimiento y síntesis de voz del
 navegador), evalúa el desempeño con la metodología de las 7 ARC, y lleva un
 tablero de resultados por persona y por equipo.
 
-**No depende de Claude ni de créditos de Claude.** Es una app web normal
-(frontend estático + backend Node.js) que tú controlas y despliegas donde
-quieras, usando tu propia llave de OpenAI (o Azure OpenAI).
+**No depende de Claude ni de créditos de Claude, y el proveedor de IA por
+defecto (Groq) es 100% gratis** — sin tarjeta de crédito, sin cobro. Es una
+app web normal (frontend estático + backend Node.js) que tú controlas y
+despliegas donde quieras.
 
 ## Estructura
 
@@ -15,7 +16,7 @@ quieras, usando tu propia llave de OpenAI (o Azure OpenAI).
 sim7arc-standalone/
   backend/           Servidor Node.js (Express) — API + sirve el frontend
     server.js
-    ai.js            Capa que llama a OpenAI o Azure OpenAI
+    ai.js            Capa que llama a Groq (gratis), OpenAI o Azure OpenAI
     prompts.js       Prompts del Simulador 7 ARC (adaptados del PDF original)
     store.js         Persistencia simple en archivos JSON (backend/data/)
     catalogo-seed.json
@@ -34,7 +35,7 @@ sim7arc-standalone/
 cd backend
 npm install
 cp .env.example .env
-# Edita .env: pon tu OPENAI_API_KEY y una ADMIN_PASSWORD segura
+# Edita .env: pon tu GROQ_API_KEY (gratis, console.groq.com) y una ADMIN_PASSWORD segura
 npm start
 ```
 
@@ -91,21 +92,28 @@ el equipo comercial) y agregar productos al catálogo.
 
 ## Proveedor de IA
 
-Por defecto usa la **API de OpenAI** (`OPENAI_API_KEY` en `.env`, modelo
-`gpt-4o-mini` por defecto — rápido y económico, ideal para muchas llamadas
-cortas de práctica).
+Por defecto usa **Groq** (`GROQ_API_KEY` en `.env`, modelo
+`llama-3.3-70b-versatile`) — capa gratuita real, sin tarjeta de crédito y sin
+ningún cobro, ideal para este caso de uso. Consigue tu llave gratis en
+[console.groq.com/keys](https://console.groq.com/keys).
 
-Si prefieres **Azure OpenAI** en su lugar (ya que IAC usa varios servicios de
-Azure), pon en `.env`:
+Si en algún momento prefieres **OpenAI** o **Azure OpenAI** (de pago), pon en
+`.env`:
 
 ```
+# OpenAI
+AI_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+
+# o Azure OpenAI (ya que IAC usa varios servicios de Azure)
 AI_PROVIDER=azure
 AZURE_OPENAI_ENDPOINT=https://tu-recurso.openai.azure.com
 AZURE_OPENAI_API_KEY=...
 AZURE_OPENAI_DEPLOYMENT=nombre-de-tu-deployment
 ```
 
-No hay que tocar el código: `backend/ai.js` ya soporta ambos.
+No hay que tocar el código: `backend/ai.js` ya soporta los tres.
 
 ## Dónde desplegarlo
 
