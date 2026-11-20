@@ -167,6 +167,33 @@ app.get("/api/equipo", requiereAdmin, (req, res) => {
   res.json(out);
 });
 
+// ---------- Uso gratuito (panel informativo) ----------
+// No cobra nada ni expone secretos: solo informa cuánto del límite gratuito
+// de la IA se ha usado hoy, para que el equipo sepa si se está acercando al
+// tope del plan gratis de Groq. Render no expone un endpoint público con las
+// horas gratis consumidas, así que esa parte se muestra como información fija.
+app.get("/api/uso", (req, res) => {
+  const uso = store.obtenerUsoIA();
+  res.json({
+    ia: {
+      proveedor: ai.PROVIDER,
+      modelo: ai.modelo,
+      esGratis: ai.PROVIDER === "groq",
+      solicitudesHoy: uso.solicitudes,
+      tokensHoy: uso.tokens,
+      limites: ai.LIMITES,
+    },
+    hosting: {
+      proveedor: "Render",
+      plan: "Free",
+      ramMB: 512,
+      cpu: "0.1",
+      horasGratisPorMes: 750,
+      seDuermeTrasMinutos: 15,
+    },
+  });
+});
+
 // ---------- Frontend estático ----------
 const FRONTEND_DIR = path.join(__dirname, "..", "frontend");
 app.use(express.static(FRONTEND_DIR));

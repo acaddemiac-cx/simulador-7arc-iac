@@ -8,6 +8,7 @@
 // generarTexto() / generarJSON() de este archivo.
 
 const OpenAI = require("openai");
+const store = require("./store");
 
 const PROVIDER = (process.env.AI_PROVIDER || "groq").toLowerCase();
 
@@ -51,6 +52,7 @@ async function generarTexto(mensajes, opts = {}) {
     temperature: opts.temperature ?? 0.8,
     max_tokens: opts.maxTokens ?? 350,
   });
+  store.registrarUsoIA(resp.usage && resp.usage.total_tokens);
   return resp.choices[0].message.content.trim();
 }
 
@@ -62,6 +64,7 @@ async function generarJSON(mensajes, opts = {}) {
     max_tokens: opts.maxTokens ?? 1500,
     response_format: { type: "json_object" },
   });
+  store.registrarUsoIA(resp.usage && resp.usage.total_tokens);
   const texto = resp.choices[0].message.content;
   try {
     return JSON.parse(texto);
@@ -74,4 +77,13 @@ async function generarJSON(mensajes, opts = {}) {
   }
 }
 
-module.exports = { generarTexto, generarJSON, PROVIDER, modelo };
+module.exports = {
+  generarTexto,
+  generarJSON,
+  PROVIDER,
+  modelo,
+  LIMITES:
+    PROVIDER === "groq"
+      ? { solicitudesPorDia: 1000, solicitudesPorMinuto: 30, tokensPorDia: 200000, tokensPorMinuto: 8000 }
+      : null, // OpenAI/Azure son de pago: no aplican límites gratis fijos
+};

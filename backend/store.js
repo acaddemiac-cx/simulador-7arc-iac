@@ -103,4 +103,22 @@ module.exports = {
   listSimulacionesTodas() {
     return leer("simulaciones", {});
   },
+
+  // uso de IA (para el panel "Uso gratuito") — contador simple que se
+  // reinicia solo cuando cambia el día (fecha del servidor).
+  registrarUsoIA(tokens) {
+    const hoy = new Date().toISOString().slice(0, 10);
+    let uso = leer("uso", { dia: hoy, solicitudes: 0, tokens: 0 });
+    if (uso.dia !== hoy) uso = { dia: hoy, solicitudes: 0, tokens: 0 };
+    uso.solicitudes += 1;
+    uso.tokens += tokens || 0;
+    escribir("uso", uso);
+    return uso;
+  },
+  obtenerUsoIA() {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const uso = leer("uso", { dia: hoy, solicitudes: 0, tokens: 0 });
+    if (uso.dia !== hoy) return { dia: hoy, solicitudes: 0, tokens: 0 };
+    return uso;
+  },
 };

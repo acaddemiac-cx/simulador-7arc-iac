@@ -29,6 +29,7 @@ let STATE = {
   tab:"simular",
   call:{active:false, mensajes:[], escenario:null, nivel:2, producto:null, escuchando:false, procesando:false, evaluando:false, resultado:null, caption:""},
   misResultados:[], equipoResultados:[], loadingTeam:false,
+  uso:null, loadingUso:false,
 };
 localStorage.setItem("sim7arc_userId", STATE.userId);
 
@@ -141,6 +142,14 @@ async function loadEquipoResultados(){
     showToast("Tu sesión de administrador expiró o la contraseña es inválida. Vuelve a ingresarla en la pestaña Admin.", true);
   }
   STATE.loadingTeam = false; render();
+}
+
+async function loadUso(){
+  STATE.loadingUso = true;
+  try{
+    STATE.uso = await api("/api/uso");
+  }catch(e){ console.warn(e); }
+  STATE.loadingUso = false;
 }
 
 function showToast(msg, isErr){
@@ -277,7 +286,7 @@ function render(){
   `);
   app.appendChild(header);
 
-  const tabsDef = [["simular","Simular llamada"],["tablero","Mi Tablero"],["catalogo","Catálogo"]];
+  const tabsDef = [["simular","Simular llamada"],["tablero","Mi Tablero"],["catalogo","Catálogo"],["uso","Uso Gratuito"]];
   if(STATE.isAdmin){ tabsDef.push(["equipo","Equipo"]); }
   tabsDef.push(["admin","Admin"]);
 
@@ -285,7 +294,7 @@ function render(){
   tabsDef.forEach(([key,label])=>{
     const b = el('<button>'+escapeHtml(label)+'</button>');
     if(STATE.tab===key) b.classList.add("active");
-    b.onclick = ()=>{ STATE.tab = key; if(key==="equipo") loadEquipoResultados(); render(); };
+    b.onclick = ()=>{ STATE.tab = key; if(key==="equipo") loadEquipoResultados(); if(key==="uso") loadUso().then(render); render(); };
     nav.appendChild(b);
   });
   app.appendChild(nav);
@@ -293,13 +302,14 @@ function render(){
   const main = el('<main></main>');
   app.appendChild(main);
 
-  if(!STATE.nombre && STATE.tab!=="admin"){
+  if(!STATE.nombre && STATE.tab==="simular"){
     main.appendChild(renderOnboarding());
   }
 
   if(STATE.tab==="simular") main.appendChild(renderSimular());
   else if(STATE.tab==="tablero") main.appendChild(renderTablero());
   else if(STATE.tab==="catalogo") main.appendChild(renderCatalogo());
+  else if(STATE.tab==="uso") main.appendChild(renderUso());
   else if(STATE.tab==="equipo") main.appendChild(renderEquipo());
   else if(STATE.tab==="admin") main.appendChild(renderAdmin());
 
@@ -501,6 +511,58 @@ function renderCatalogo(){
     });
     wrap.appendChild(tbl);
   });
+  return wrap;
+}
+
+function renderUso(){
+  const wrap = el('<div></div>');
+  const u = STATE.uso;
+
+  if(STATE.loadingUso && !u){
+    wrap.appendChild(el('<div class="card"><div class="empty">Cargando uso…</div></div>'));
+    return wrap;
+  }
+  if(!u){
+    wrap.appendChild(el('<div class="card"><div class="empty">No se pudo cargar el uso. Intenta de nuevo.</div></div>'));
+    return wrap;
+  }
+
+  const ia = u.ia, host = u.hosting;
+  const limites = ia.limites;
+
+  wrap.appendChild(el(`<div class="card">
+    <h2>Uso gratuito de la IA (${escapeHtml(ia.proveedor)})</h2>
+    <p class="small">Modelo: <b>${escapeHtml(ia.modelo)}</b> · ${ia.esGratis ? "Capa 100% gratis, sin tarjeta de crédito." : "Este proveedor es de pago (no tiene límite gratis fijo)."}</p>
+  </div>`));
+
+  if(ia.esGratis && limites){
+    const pctSolic = Math.min(100, Math.round((ia.solicitudesHoy / limites.solicitudesPorDia) * 100));
+    const pctTokens = Math.min(100, Math.round((ia.tokensHoy / limites.tokensPorDia) * 100));
+    const c = el('<div class="card"><h3>Hoy</h3></div>');
+    c.appendChild(el(`<div class="arcbar-row">
+      <div class="arcbar-label">Solicitudes de IA</div>
+      <div class="arcbar-track"><div class="arcbar-fill" style="width:${pctSolic}%"></div></div>
+      <div class="arcbar-val">${ia.solicitudesHoy} / ${limites.solicitudesPorDia}</div>
+    </div>`));
+    c.appendChild(el(`<div class="arcbar-row">
+      <div class="arcbar-label">Tokens procesados</div>
+      <div class="arcbar-track"><div class="arcbar-fill" style="width:${pctTokens}%"></div></div>
+      <div class="arcbar-val">${ia.tokensHoy.toLocaleString("es-CO")} / ${limites.tokensPorDia.toLocaleString("es-CO")}</div>
+    </div>`));
+    c.appendChild(el(`<p class="small" style="margin-top:10px;">Estos contadores se reinician solos cada día. También hay un límite de ${limites.solicitudesPorMinuto} solicitudes y ${limites.tokensPorMinuto.toLocaleString("es-CO")} tokens por minuto (no se muestra aquí porque se resetea cada 60 segundos).</p>`));
+    wrap.appendChild(c);
+  }
+
+  wrap.appendChild(el(`<div class="card">
+    <h3>Hosting (${escapeHtml(host.proveedor)}, plan ${escapeHtml(host.plan)})</h3>
+    <div class="grid cols-3" style="margin-top:10px;">
+      <div><b>${host.ramMB} MB</b><div class="small">RAM</div></div>
+      <div><b>${host.cpu}</b><div class="small">CPU</div></div>
+      <div><b>${host.horasGratisPorMes}h</b><div class="small">gratis / mes</div></div>
+    </div>
+    <p class="small" style="margin-top:10px;">El servicio se "duerme" tras ${host.seDuermeTrasMinutos} minutos sin uso, y la siguiente visita puede tardar hasta un minuto en responder mientras despierta. Esto no tiene costo, es normal del plan gratis.</p>
+  </div>`));
+
   return wrap;
 }
 
