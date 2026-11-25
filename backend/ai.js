@@ -37,8 +37,10 @@ if (PROVIDER === "azure") {
   client = new OpenAI({ apiKey });
 } else {
   // Groq: API gratuita, compatible con el SDK de OpenAI (mismo formato).
+  // Nota: llama-3.3-70b-versatile fue descontinuado por Groq el 16/08/2026.
+  // openai/gpt-oss-120b es el reemplazo gratuito recomendado por Groq mismo.
   const apiKey = process.env.GROQ_API_KEY;
-  modelo = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+  modelo = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
   if (!apiKey) {
     console.error("Falta GROQ_API_KEY en .env (consíguela gratis en https://console.groq.com/keys)");
   }

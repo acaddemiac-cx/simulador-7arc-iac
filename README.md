@@ -93,7 +93,7 @@ el equipo comercial) y agregar productos al catálogo.
 ## Proveedor de IA
 
 Por defecto usa **Groq** (`GROQ_API_KEY` en `.env`, modelo
-`llama-3.3-70b-versatile`) — capa gratuita real, sin tarjeta de crédito y sin
+`openai/gpt-oss-120b`) — capa gratuita real, sin tarjeta de crédito y sin
 ningún cobro, ideal para este caso de uso. Consigue tu llave gratis en
 [console.groq.com/keys](https://console.groq.com/keys).
 
