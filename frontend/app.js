@@ -30,6 +30,7 @@ let STATE = {
   call:{active:false, mensajes:[], escenario:null, nivel:2, producto:null, escuchando:false, procesando:false, evaluando:false, resultado:null, caption:""},
   misResultados:[], equipoResultados:[], loadingTeam:false,
   uso:null, loadingUso:false,
+  vozGenero: localStorage.getItem("sim7arc_vozGenero") || "mujer",
 };
 localStorage.setItem("sim7arc_userId", STATE.userId);
 
@@ -63,27 +64,38 @@ if("speechSynthesis" in window){
   vocesDisponibles = window.speechSynthesis.getVoices();
 }
 
-function vozEspanol(){
-  const candidatas = vocesDisponibles.filter(v => /es/i.test(v.lang));
-  return candidatas[0] || null;
+// El navegador no expone el "género" de una voz como dato, así que se
+// reconoce por nombres típicos. Si no encuentra ninguna coincidencia, usa
+// la primera voz en español disponible (y el tono/pitch de abajo como respaldo).
+const VOZ_FEMENINA = /female|mujer|zira|samantha|victoria|ivy|sabina|helena|laura|paulina|monica|mónica|lucia|lucía|conchita|penelope|penélope|lupe|camila|elena|isabela|isabella|catalina|valentina|marisol|carmen|esperanza|soledad|maria|maría|paloma|ines|inés|alejandra|renata/i;
+const VOZ_MASCULINA = /male|hombre|jorge|diego|pablo|enrique|carlos|miguel|raul|raúl|juan|alvaro|álvaro|andres|andrés|ricardo|felipe|mateo|santiago|fernando|tomas|tomás|daniel|rodrigo|sebastian|sebastián|david|antonio|francisco/i;
+
+function vozPorGenero(genero){
+  const esp = vocesDisponibles.filter(v => /es/i.test(v.lang));
+  if(!esp.length) return null;
+  const regex = genero === "hombre" ? VOZ_MASCULINA : VOZ_FEMENINA;
+  return esp.find(v => regex.test(v.name)) || esp[0];
 }
 
-function hablar(texto){
+function hablar(texto, genero){
   return new Promise((resolve)=>{
     if(!("speechSynthesis" in window) || !texto){ resolve(); return; }
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(texto);
     u.lang = "es-CO";
-    const v = vozEspanol();
+    const v = vozPorGenero(genero || "mujer");
     if(v) u.voice = v;
     u.rate = 1.0;
+    // Ajuste de tono: sirve de respaldo cuando el navegador solo trae una
+    // voz en español (así igual se nota la diferencia hombre/mujer).
+    u.pitch = genero === "hombre" ? 0.8 : 1.15;
     u.onend = resolve;
     u.onerror = resolve;
     window.speechSynthesis.speak(u);
   });
 }
 
-function crearReconocedor(onFinal, onParcial, onEstado, onError){
+function crearReconocedor(onFinal, onParcial, onFin, onError){
   if(!SpeechRecognitionImpl) return null;
   const r = new SpeechRecognitionImpl();
   r.lang = "es-CO";
@@ -98,8 +110,8 @@ function crearReconocedor(onFinal, onParcial, onEstado, onError){
     }
     if(interim) onParcial(interim);
   };
-  r.onend = ()=>onEstado("idle");
-  r.onerror = (ev)=>{ onEstado("idle"); if(onError) onError(ev.error); };
+  r.onend = ()=>onFin();
+  r.onerror = (ev)=>{ if(onError) onError(ev.error); };
   return r;
 }
 
@@ -184,6 +196,10 @@ async function guardarNombre(nombre, email){
 /* ---------------- Simulación de llamada ---------------- */
 
 function iniciarLlamada(opts){
+  micDetenidoManualmente = true;
+  if(temporizadorEnvio){ clearTimeout(temporizadorEnvio); temporizadorEnvio = null; }
+  bufferTranscripcion = "";
+  recognizer && recognizer.stop && recognizer.stop();
   STATE.call = {active:true, mensajes:[], escenario:opts.escenario, nivel:opts.nivel, producto:opts.producto, escuchando:false, procesando:false, evaluando:false, resultado:null, caption:""};
   render();
 }
@@ -197,7 +213,7 @@ async function turnoProspecto(){
     })});
     call.mensajes.push({rol:"prospecto", texto:r.texto});
     call.procesando = false; render();
-    await hablar(r.texto);
+    await hablar(r.texto, STATE.vozGenero);
   }catch(e){
     console.warn(e);
     call.mensajes.push({rol:"sistema", texto:"No se pudo obtener respuesta del prospecto. Intenta de nuevo."});
@@ -214,6 +230,31 @@ function manejarTranscripcionFinal(texto, chatCardRef){
   turnoProspecto();
 }
 
+/* El vendedor puede hacer pausas (para pensar) de hasta este tiempo mientras
+   habla; el reconocimiento sigue "armando" lo que dice y solo lo envía como
+   un único mensaje cuando pasa este tiempo sin detectar más voz. Así una
+   pausa no corta la idea a la mitad ni genera una respuesta prematura. */
+const PAUSA_MAXIMA_MS = 7000;
+
+let bufferTranscripcion = "";
+let temporizadorEnvio = null;
+let micDetenidoManualmente = true;
+
+function limpiarTemporizadorEnvio(){
+  if(temporizadorEnvio){ clearTimeout(temporizadorEnvio); temporizadorEnvio = null; }
+}
+
+function reiniciarTemporizadorEnvio(){
+  limpiarTemporizadorEnvio();
+  temporizadorEnvio = setTimeout(()=>{
+    const texto = bufferTranscripcion.trim();
+    bufferTranscripcion = "";
+    temporizadorEnvio = null;
+    if(texto) manejarTranscripcionFinal(texto);
+    else { STATE.call.caption = ""; render(); }
+  }, PAUSA_MAXIMA_MS);
+}
+
 function toggleMicrofono(){
   const call = STATE.call;
   if(!SpeechRecognitionImpl){
@@ -221,16 +262,59 @@ function toggleMicrofono(){
     return;
   }
   if(call.escuchando){
+    // El vendedor detiene el micrófono a propósito: envía de inmediato lo
+    // que ya se había dicho, sin esperar los 7 segundos de pausa.
+    micDetenidoManualmente = true;
+    limpiarTemporizadorEnvio();
     recognizer && recognizer.stop();
-    call.escuchando = false; render();
+    call.escuchando = false;
+    const texto = bufferTranscripcion.trim();
+    bufferTranscripcion = "";
+    call.caption = "";
+    render();
+    if(texto) manejarTranscripcionFinal(texto);
     return;
   }
   window.speechSynthesis && window.speechSynthesis.cancel();
+  micDetenidoManualmente = false;
+  bufferTranscripcion = "";
+  limpiarTemporizadorEnvio();
   recognizer = crearReconocedor(
-    (textoFinal)=>{ manejarTranscripcionFinal(textoFinal); },
-    (parcial)=>{ STATE.call.caption = parcial; render(); },
-    (estado)=>{ STATE.call.escuchando = false; render(); },
+    (textoFinal)=>{
+      if(!textoFinal) return;
+      bufferTranscripcion = (bufferTranscripcion + " " + textoFinal).trim();
+      STATE.call.caption = bufferTranscripcion + " …";
+      render();
+      reiniciarTemporizadorEnvio();
+    },
+    (parcial)=>{
+      STATE.call.caption = (bufferTranscripcion ? bufferTranscripcion + " " : "") + parcial;
+      render();
+      // Mientras siga llegando voz (aunque sea parcial), se corre el plazo
+      // de los 7 segundos: la pausa solo cuenta cuando de verdad hay silencio.
+      if(bufferTranscripcion || parcial) reiniciarTemporizadorEnvio();
+    },
+    ()=>{
+      // El navegador corta el reconocimiento tras unos segundos de silencio
+      // aunque esté en modo "continuous". Si el vendedor no lo detuvo a
+      // propósito y la llamada sigue activa, se reinicia solo para no
+      // interrumpir su pausa de hasta 7 segundos.
+      if(!micDetenidoManualmente && STATE.call.active && STATE.call.escuchando){
+        setTimeout(()=>{
+          if(micDetenidoManualmente || !STATE.call.active || !STATE.call.escuchando) return;
+          try{ recognizer.start(); }catch(e){ /* puede fallar si ya estaba iniciando; se ignora */ }
+        }, 150);
+      } else {
+        STATE.call.escuchando = false; render();
+      }
+    },
     (codigoError)=>{
+      // "no-speech" y "aborted" son parte normal del flujo (pausas / stop
+      // manual), no errores reales que deban interrumpir la llamada.
+      if(codigoError === "no-speech" || codigoError === "aborted") return;
+      micDetenidoManualmente = true;
+      limpiarTemporizadorEnvio();
+      STATE.call.escuchando = false; render();
       const msg = mensajeErrorMic(codigoError);
       if(msg) showToast(msg, true);
     }
@@ -245,6 +329,9 @@ function toggleMicrofono(){
 
 async function finalizarYEvaluar(){
   const call = STATE.call;
+  micDetenidoManualmente = true;
+  if(temporizadorEnvio){ clearTimeout(temporizadorEnvio); temporizadorEnvio = null; }
+  bufferTranscripcion = "";
   if(call.escuchando){ recognizer && recognizer.stop(); call.escuchando=false; }
   call.evaluando = true; render();
   try{
@@ -362,8 +449,8 @@ function renderSimular(){
     const lineas = [...new Set(productos.map(p=>p.linea))];
     const card = el(`<div class="card">
       <h2>Configura tu llamada</h2>
-      <p class="small">Esta práctica simula una LLAMADA: habla por el micrófono y escucharás la voz del prospecto. Funciona mejor en Chrome o Edge, en computador.</p>
-      <div class="grid cols-2">
+      <p class="small">Esta práctica simula una LLAMADA: habla por el micrófono y escucharás la voz del prospecto. Puedes hacer pausas de hasta 7 segundos para organizar tus ideas; el sistema espera antes de enviar lo que dijiste. Funciona mejor en Chrome o Edge, en computador.</p>
+      <div class="grid cols-3">
         <div>
           <label>Línea de negocio / producto a practicar</label>
           <select id="selProducto"></select>
@@ -375,6 +462,13 @@ function renderSimular(){
             <option value="2" selected>Nivel 2 — Intermedio (recomendado)</option>
             <option value="3">Nivel 3 — Avanzado</option>
             <option value="4">Nivel 4 — Experto</option>
+          </select>
+        </div>
+        <div>
+          <label>Voz del prospecto</label>
+          <select id="selVoz">
+            <option value="mujer">Mujer</option>
+            <option value="hombre">Hombre</option>
           </select>
         </div>
       </div>
@@ -390,9 +484,13 @@ function renderSimular(){
       });
       sel.appendChild(og);
     });
+    $("#selVoz", card).value = STATE.vozGenero;
     $("#btnIniciar", card).onclick = ()=>{
       const producto = sel.value;
       const nivel = parseInt($("#selNivel",card).value,10);
+      const vozGenero = $("#selVoz",card).value;
+      STATE.vozGenero = vozGenero;
+      localStorage.setItem("sim7arc_vozGenero", vozGenero);
       const escenario = $("#txtEscenario",card).value.trim() || ("Prospecto interesado en "+producto+", generado libremente por la IA según el nivel elegido.");
       iniciarLlamada({producto, nivel, escenario});
     };
