@@ -230,11 +230,20 @@ function manejarTranscripcionFinal(texto, chatCardRef){
   turnoProspecto();
 }
 
-/* El vendedor puede hacer pausas (para pensar) de hasta este tiempo mientras
-   habla; el reconocimiento sigue "armando" lo que dice y solo lo envía como
-   un único mensaje cuando pasa este tiempo sin detectar más voz. Así una
-   pausa no corta la idea a la mitad ni genera una respuesta prematura. */
-const PAUSA_MAXIMA_MS = 7000;
+/* Para que la llamada se sienta fluida, el prospecto responde rápido tras
+   una pausa corta normal (como en una llamada real). Pero si lo que se dijo
+   termina en una palabra "de enganche" (y, que, entonces, eh...) es señal de
+   que la idea sigue a medias, así que se espera un poco más antes de enviar,
+   en vez de cortar al vendedor a mitad de frase. */
+const PAUSA_CORTA_MS = 1400;
+const PAUSA_EXTENDIDA_MS = 3500;
+const PALABRAS_DE_ENGANCHE = /^(y|o|que|porque|pues|entonces|este|esto|eh|em|mmm|bueno|digamos|osea|para|con|de|en|al|del|la|el|un|una|mi|su|a)$/i;
+
+function calcularPausaMs(texto){
+  const limpio = (texto || "").trim().replace(/[.,;:!?¡¿…]+$/,"");
+  const ultimaPalabra = limpio.split(/\s+/).pop() || "";
+  return PALABRAS_DE_ENGANCHE.test(ultimaPalabra) ? PAUSA_EXTENDIDA_MS : PAUSA_CORTA_MS;
+}
 
 let bufferTranscripcion = "";
 let temporizadorEnvio = null;
@@ -244,15 +253,16 @@ function limpiarTemporizadorEnvio(){
   if(temporizadorEnvio){ clearTimeout(temporizadorEnvio); temporizadorEnvio = null; }
 }
 
-function reiniciarTemporizadorEnvio(){
+function reiniciarTemporizadorEnvio(textoParaEvaluar){
   limpiarTemporizadorEnvio();
+  const espera = calcularPausaMs(textoParaEvaluar != null ? textoParaEvaluar : bufferTranscripcion);
   temporizadorEnvio = setTimeout(()=>{
     const texto = bufferTranscripcion.trim();
     bufferTranscripcion = "";
     temporizadorEnvio = null;
     if(texto) manejarTranscripcionFinal(texto);
     else { STATE.call.caption = ""; render(); }
-  }, PAUSA_MAXIMA_MS);
+  }, espera);
 }
 
 function toggleMicrofono(){
@@ -288,11 +298,12 @@ function toggleMicrofono(){
       reiniciarTemporizadorEnvio();
     },
     (parcial)=>{
-      STATE.call.caption = (bufferTranscripcion ? bufferTranscripcion + " " : "") + parcial;
+      const combinado = (bufferTranscripcion ? bufferTranscripcion + " " : "") + parcial;
+      STATE.call.caption = combinado;
       render();
-      // Mientras siga llegando voz (aunque sea parcial), se corre el plazo
-      // de los 7 segundos: la pausa solo cuenta cuando de verdad hay silencio.
-      if(bufferTranscripcion || parcial) reiniciarTemporizadorEnvio();
+      // Mientras siga llegando voz (aunque sea parcial), se corre el plazo de
+      // envío: la pausa solo empieza a contar cuando de verdad hay silencio.
+      if(combinado.trim()) reiniciarTemporizadorEnvio(combinado);
     },
     ()=>{
       // El navegador corta el reconocimiento tras unos segundos de silencio
@@ -449,7 +460,7 @@ function renderSimular(){
     const lineas = [...new Set(productos.map(p=>p.linea))];
     const card = el(`<div class="card">
       <h2>Configura tu llamada</h2>
-      <p class="small">Esta práctica simula una LLAMADA: habla por el micrófono y escucharás la voz del prospecto. Puedes hacer pausas de hasta 7 segundos para organizar tus ideas; el sistema espera antes de enviar lo que dijiste. Funciona mejor en Chrome o Edge, en computador.</p>
+      <p class="small">Esta práctica simula una LLAMADA: habla por el micrófono y escucharás la voz del prospecto, con una conversación fluida como en una llamada real. Funciona mejor en Chrome o Edge, en computador.</p>
       <div class="grid cols-3">
         <div>
           <label>Línea de negocio / producto a practicar</label>
