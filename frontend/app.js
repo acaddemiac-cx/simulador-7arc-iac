@@ -83,7 +83,7 @@ function hablar(texto){
   });
 }
 
-function crearReconocedor(onFinal, onParcial, onEstado){
+function crearReconocedor(onFinal, onParcial, onEstado, onError){
   if(!SpeechRecognitionImpl) return null;
   const r = new SpeechRecognitionImpl();
   r.lang = "es-CO";
@@ -99,8 +99,22 @@ function crearReconocedor(onFinal, onParcial, onEstado){
     if(interim) onParcial(interim);
   };
   r.onend = ()=>onEstado("idle");
-  r.onerror = ()=>onEstado("idle");
+  r.onerror = (ev)=>{ onEstado("idle"); if(onError) onError(ev.error); };
   return r;
+}
+
+function mensajeErrorMic(codigo){
+  const mapa = {
+    "not-allowed": "El navegador bloqueó el micrófono. Haz clic en el ícono de candado/micrófono en la barra de direcciones, permite el acceso al micrófono para este sitio y recarga la página.",
+    "permission-denied": "El navegador bloqueó el micrófono. Haz clic en el ícono de candado/micrófono en la barra de direcciones, permite el acceso al micrófono para este sitio y recarga la página.",
+    "service-not-allowed": "Este navegador o una política del equipo está bloqueando el reconocimiento de voz. Prueba con Chrome o Edge sin restricciones de red/VPN.",
+    "audio-capture": "No se encontró un micrófono disponible. Revisa que tengas uno conectado y habilitado en el sistema.",
+    "no-speech": "No se detectó voz. Acércate al micrófono y vuelve a intentarlo.",
+    "network": "Hubo un problema de red con el reconocimiento de voz de Google (lo usa Chrome/Edge internamente). Revisa tu conexión a internet e inténtalo de nuevo.",
+    "language-not-supported": "El idioma español no está disponible para reconocimiento de voz en este navegador.",
+    "aborted": "" // el usuario detuvo la grabación manualmente; no es un error real
+  };
+  return mapa[codigo] || ("No se pudo usar el micrófono (" + codigo + "). Puedes escribir tu respuesta en el campo de texto mientras tanto.");
 }
 
 /* ---------------- Boot ---------------- */
@@ -155,7 +169,7 @@ async function loadUso(){
 function showToast(msg, isErr){
   const t = el('<div class="'+(isErr?"err":"ok")+'" style="position:fixed;bottom:16px;right:16px;max-width:320px;z-index:99;">'+escapeHtml(msg)+'</div>');
   document.body.appendChild(t);
-  setTimeout(()=>t.remove(), 4500);
+  setTimeout(()=>t.remove(), isErr ? 8000 : 4500);
 }
 
 async function guardarNombre(nombre, email){
@@ -215,13 +229,17 @@ function toggleMicrofono(){
   recognizer = crearReconocedor(
     (textoFinal)=>{ manejarTranscripcionFinal(textoFinal); },
     (parcial)=>{ STATE.call.caption = parcial; render(); },
-    (estado)=>{ STATE.call.escuchando = false; render(); }
+    (estado)=>{ STATE.call.escuchando = false; render(); },
+    (codigoError)=>{
+      const msg = mensajeErrorMic(codigoError);
+      if(msg) showToast(msg, true);
+    }
   );
   try{
     recognizer.start();
     call.escuchando = true; render();
   }catch(e){
-    showToast("No se pudo activar el micrófono.", true);
+    showToast("No se pudo activar el micrófono: " + (e && e.message ? e.message : e), true);
   }
 }
 
