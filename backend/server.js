@@ -101,9 +101,16 @@ app.delete("/api/productos/:id", requiereAdmin, (req, res) => {
 
 app.post("/api/simular/turno", async (req, res) => {
   try {
-    const { nivel, escenario, producto, transcripcion } = req.body || {};
+    const { nivel, escenario, producto, transcripcion, nombreVendedor, generoProspecto } = req.body || {};
     if (!producto || !transcripcion) return res.status(400).json({ error: "Faltan datos" });
-    const mensajes = promptTurno({ nivel: nivel || 2, escenario: escenario || "", producto, transcripcion });
+    const mensajes = promptTurno({
+      nivel: nivel || 2,
+      escenario: escenario || "",
+      producto,
+      transcripcion,
+      nombreVendedor: nombreVendedor || "",
+      generoProspecto: generoProspecto || "mujer",
+    });
     const texto = await ai.generarTexto(mensajes, { maxTokens: 220 });
     res.json({ texto });
   } catch (e) {

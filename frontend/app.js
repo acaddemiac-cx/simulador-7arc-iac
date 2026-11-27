@@ -209,7 +209,8 @@ async function turnoProspecto(){
   call.procesando = true; render();
   try{
     const r = await api("/api/simular/turno", {method:"POST", body: JSON.stringify({
-      nivel: call.nivel, escenario: call.escenario, producto: call.producto, transcripcion: call.mensajes
+      nivel: call.nivel, escenario: call.escenario, producto: call.producto, transcripcion: call.mensajes,
+      nombreVendedor: STATE.nombre || "", generoProspecto: STATE.vozGenero || "mujer"
     })});
     call.mensajes.push({rol:"prospecto", texto:r.texto});
     call.procesando = false; render();
@@ -514,7 +515,7 @@ function renderSimular(){
   </div>`));
 
   if(call.resultado){
-    wrap.appendChild(renderResultadoEvaluacion(call.resultado));
+    wrap.appendChild(renderResultadoEvaluacion(call.resultado, call));
     const btnNueva = el('<button class="btn secondary" style="margin-top:10px;">Nueva llamada</button>');
     btnNueva.onclick = ()=>{ STATE.call = {active:false, mensajes:[]}; render(); };
     wrap.appendChild(btnNueva);
@@ -570,9 +571,14 @@ function renderSimular(){
   return wrap;
 }
 
-function renderResultadoEvaluacion(data){
+function renderResultadoEvaluacion(data, call){
   const c = el('<div class="card"></div>');
-  c.appendChild(el('<div class="score-hero">'+Math.round(data.puntuacionTotal||0)+'<span> / 100</span></div>'));
+  const topRow = el('<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;"></div>');
+  topRow.appendChild(el('<div class="score-hero">'+Math.round(data.puntuacionTotal||0)+'<span> / 100</span></div>'));
+  const btnPdf = el('<button class="btn secondary" style="white-space:nowrap;">⬇ Descargar PDF</button>');
+  btnPdf.onclick = () => descargarPdfEvaluacion(data, call || {});
+  topRow.appendChild(btnPdf);
+  c.appendChild(topRow);
   c.appendChild(el('<h3 style="margin-top:14px;">Puntuación por ARC</h3>'));
   ARC_KEYS.forEach(k=>{
     const a = (data.arc && data.arc[k]) || {puntuacion:0,comentario:""};
@@ -590,6 +596,82 @@ function renderResultadoEvaluacion(data){
     c.appendChild(el('<div class="card" style="background:#fff8e6;border-color:var(--naranja);"><b>Principal área de mejora:</b> '+escapeHtml(data.areaMejora)+'</div>'));
   }
   return c;
+}
+
+function descargarPdfEvaluacion(data, call){
+  try{
+    if(!window.jspdf || !window.jspdf.jsPDF){
+      showToast("No se pudo cargar el generador de PDF. Recarga la página e intenta de nuevo.", true);
+      return;
+    }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({unit:"pt", format:"a4"});
+    const margenX = 48;
+    const anchoUtil = 595 - margenX*2; // A4 ≈ 595pt de ancho
+    let y = 56;
+
+    const saltoDePagina = (necesario)=>{
+      if(y + necesario > 780){ doc.addPage(); y = 56; }
+    };
+    const titulo = (texto)=>{
+      saltoDePagina(28);
+      doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.setTextColor(20,20,20);
+      doc.text(texto, margenX, y); y += 18;
+    };
+    const parrafo = (texto, opts)=>{
+      doc.setFont("helvetica", (opts&&opts.bold)?"bold":"normal");
+      doc.setFontSize((opts&&opts.size)||10.5);
+      doc.setTextColor(40,40,40);
+      const lineas = doc.splitTextToSize(String(texto), anchoUtil);
+      saltoDePagina(lineas.length*14+4);
+      doc.text(lineas, margenX, y);
+      y += lineas.length*14+6;
+    };
+
+    doc.setFont("helvetica","bold"); doc.setFontSize(18); doc.setTextColor(10,10,10);
+    doc.text("Simulador de Ventas 7 ARC — Reporte de llamada", margenX, y); y += 24;
+
+    doc.setDrawColor(230,230,230); doc.line(margenX, y, 595-margenX, y); y += 18;
+
+    parrafo("Vendedor/a: " + (STATE.nombre || "No indicado"), {bold:true});
+    parrafo("Producto/línea: " + (call.producto || "No indicado"));
+    parrafo("Nivel de dificultad: " + (call.nivel || "-"));
+    if(call.escenario) parrafo("Escenario: " + call.escenario);
+    parrafo("Fecha: " + new Date().toLocaleString("es-CO"));
+    y += 6;
+
+    doc.setFont("helvetica","bold"); doc.setFontSize(26); doc.setTextColor(15,90,60);
+    doc.text(Math.round(data.puntuacionTotal||0) + " / 100", margenX, y+8);
+    doc.setFontSize(11); doc.setTextColor(90,90,90);
+    doc.text("Puntuación total", margenX+130, y+8);
+    y += 30;
+
+    titulo("Puntuación por ARC");
+    ARC_KEYS.forEach(k=>{
+      const a = (data.arc && data.arc[k]) || {puntuacion:0,comentario:""};
+      parrafo((ARC_LABELS[k]||k) + ": " + (a.puntuacion||0) + "/10", {bold:true});
+      if(a.comentario) parrafo(a.comentario, {size:10});
+    });
+
+    if(data.fortalezas && data.fortalezas.length){
+      y += 4; titulo("Fortalezas");
+      data.fortalezas.forEach(f=> parrafo("• " + f));
+    }
+    if(data.oportunidades && data.oportunidades.length){
+      y += 4; titulo("Dónde estás dejando dinero sobre la mesa");
+      data.oportunidades.forEach(f=> parrafo("• " + f));
+    }
+    if(data.areaMejora){
+      y += 4; titulo("Principal área de mejora");
+      parrafo(data.areaMejora);
+    }
+
+    const nombreArchivo = "evaluacion_7arc_" + (STATE.nombre||"vendedor").replace(/[^a-z0-9]+/gi,"_") + "_" + Date.now() + ".pdf";
+    doc.save(nombreArchivo);
+  }catch(e){
+    console.error(e);
+    showToast("Ocurrió un error generando el PDF.", true);
+  }
 }
 
 function renderTablero(){

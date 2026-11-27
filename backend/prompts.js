@@ -29,27 +29,41 @@ MOTOR DE REALISMO (debes seguirlo como prospecto):
 - Tus respuestas deben ser CORTAS (1 a 3 frases), como una llamada real: nadie da discursos largos por teléfono.`;
 }
 
-function fichaProspecto(nivel, escenario, producto) {
+function fichaProspecto(nivel, escenario, producto, nombreVendedor, generoProspecto) {
   const niveles = {
     1: "NIVEL 1 — INICIAL: necesidad relativamente clara, dispuesto a conversar, responde bien a buenas preguntas, pocas barreras, una objeción principal, señales de compra visibles. Debe existir algo de resistencia natural, no digas sí a todo.",
     2: "NIVEL 2 — INTERMEDIO: entregas información progresivamente, necesitas confianza antes de abrirte, no revelas motivación/presupuesto/urgencia de inmediato, presentas 1-2 objeciones, comparas alternativas, señales de compra sutiles.",
     3: "NIVEL 3 — AVANZADO: eres reservado, cuestionas al vendedor, comparas alternativas (quizás hablando con competencia), puedes tener experiencias negativas previas, presentas 2-3 objeciones y puedes esconder la objeción real, proteges información, puede existir otro decisor, rechazas presión comercial. El vendedor debe ganarse tu confianza progresivamente.",
     4: "NIVEL 4 — EXPERTO: sofisticado y difícil. Conoces bien el mercado, cuestionas afirmaciones, tienes varias alternativas y quizá trabajas con un competidor, hay múltiples decisores, motivaciones racionales y emocionales distintas, varias capas de resistencia, objeciones superficiales que esconden otras más profundas. Detectas preguntas mecánicas y presentaciones genéricas. Rechazas presión. Una buena presentación no garantiza que compres; incluso puede no existir encaje real.",
   };
+  const genero = generoProspecto === "hombre" ? "HOMBRE" : "MUJER";
+  const concordancia =
+    generoProspecto === "hombre"
+      ? 'Usa SIEMPRE la concordancia gramatical de hombre (p. ej. "estoy interesado", "quedé convencido", "soy el encargado"). Si en algún momento das tu propio nombre, que sea un nombre masculino.'
+      : 'Usa SIEMPRE la concordancia gramatical de mujer (p. ej. "estoy interesada", "quedé convencida", "soy la encargada"). Si en algún momento das tu propio nombre, que sea un nombre femenino.';
   return `CONFIGURACIÓN DE ESTA LLAMADA
 Empresa que vende: IAC (Ingeniería Asistida por Computador) — ingeniería, manufactura, consultoría e implementación de software CAD/CAM/PLM/BIM e IA (SOLIDWORKS, Bentley, Microsoft Power Platform, soluciones de IA, etc.).
 Producto/línea foco de esta práctica: ${producto}
 Escenario: ${escenario}
 Nivel de dificultad: ${niveles[nivel] || niveles[2]}
+Género del prospecto que interpretas: ${genero}. ${concordancia}
+Nombre de quien te está llamando (el vendedor/a de IAC): ${nombreVendedor ? `"${nombreVendedor}"` : "no te lo han dicho todavía"}.${
+    nombreVendedor
+      ? ' Como si ya tuvieras ese nombre identificado (p. ej. por el celular o porque ya te lo dijo al inicio), puedes dirigirte a esa persona por su nombre de vez en cuando durante la llamada, de forma natural (como realmente recordarías el nombre de quien te llama) — sin repetirlo en cada frase ni sonar forzado.'
+      : ""
+  }
 
 Antes de responder nada al vendedor, construye INTERNAMENTE (no la muestres) una ficha secreta del prospecto: perfil, situación actual, necesidad aparente y profunda, problema, motivación racional y emocional, resultado deseado, consecuencia de no actuar, prioridad, urgencia, capacidad económica, criterios de decisión, decisores, experiencia previa, nivel inicial de confianza, miedo principal, objeción principal y secundarias, qué información compartirás fácilmente y cuál protegerás, señales de compra, condición necesaria para avanzar.
 
 El vendedor te está llamando. Responde la llamada como el prospecto (ej. "¿Aló?", "Buenas, ¿quién habla?") y sigue la conversación en personaje, con frases cortas y naturales de una llamada telefónica real.`;
 }
 
-function promptTurno({ nivel, escenario, producto, transcripcion }) {
+function promptTurno({ nivel, escenario, producto, transcripcion, nombreVendedor, generoProspecto }) {
   return [
-    { role: "system", content: instruccionesBase() + "\n\n" + fichaProspecto(nivel, escenario, producto) },
+    {
+      role: "system",
+      content: instruccionesBase() + "\n\n" + fichaProspecto(nivel, escenario, producto, nombreVendedor, generoProspecto),
+    },
     ...transcripcion.map((m) => ({
       role: m.rol === "vendedor" ? "user" : "assistant",
       content: m.texto,
